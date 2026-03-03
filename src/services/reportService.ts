@@ -1,4 +1,19 @@
-import {
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import * as docx from "docx";
+
+type DocxAPI = {
+  Document: new (opts: any) => any;
+  Packer: { toBuffer: (doc: any) => Promise<Buffer> };
+  Paragraph: new (opts: any) => any;
+  TextRun: new (opts: any) => any;
+  Table: new (opts: any) => any;
+  TableRow: new (opts: any) => any;
+  TableCell: new (opts: any) => any;
+  WidthType: { DXA: string };
+  BorderStyle: { SINGLE: string };
+};
+
+const {
   Document,
   Packer,
   Paragraph,
@@ -8,7 +23,7 @@ import {
   TableCell,
   WidthType,
   BorderStyle,
-} from "docx";
+} = docx as unknown as DocxAPI;
 
 export interface ReportData {
   [key: string]: string | number | undefined;

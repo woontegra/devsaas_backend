@@ -18,7 +18,6 @@ export function presentValueMonthlyAnnuity(
   for (let m = 0; m < months; m++) {
     const yearsFromStart = m / 12;
     const surv = getSurvivalProbability(startAge, gender, yearsFromStart);
-    const v = discountFactor(interestRate, yearsFromStart);
     const monthlyV = Math.pow(1 / (1 + interestRate), (m + 1) / 12);
     pv += monthlyPayment * surv * monthlyV;
   }
