@@ -7,11 +7,28 @@ import type { AuthRequest } from "../middleware/authMiddleware.js";
 
 export const actuarialRouter = Router();
 
+function isLegacyCalculationEnabled(): boolean {
+  return process.env.ENABLE_LEGACY_CALCULATION === "true";
+}
+
+/**
+ * LEGACY: POST /calculate
+ * Varsayılan kapalı. ENABLE_LEGACY_CALCULATION=true ile açılır.
+ * Aktif frontend bu endpointi çağırmamalıdır.
+ */
 actuarialRouter.post(
   "/calculate",
   authMiddleware,
   subscriptionMiddleware,
   (req, res) => {
+    if (!isLegacyCalculationEnabled()) {
+      res.status(410).json({
+        code: "LEGACY_CALCULATION_DISABLED",
+        error: "Legacy calculation disabled",
+        message: "Bu endpoint varsayılan olarak kapalıdır. ENABLE_LEGACY_CALCULATION=true ile açılabilir.",
+      });
+      return;
+    }
     const outcome = runCalculation(req.body);
     if (!outcome.success) {
       res.status(400).json({ errors: outcome.errors });

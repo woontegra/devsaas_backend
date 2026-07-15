@@ -21,13 +21,30 @@ function flattenResult(result: ActuarialResult): Record<string, string | number>
   };
 }
 
+function isLegacyReportEnabled(): boolean {
+  return process.env.ENABLE_LEGACY_REPORT === "true";
+}
+
 export const reportRouter = Router();
 
+/**
+ * LEGACY: POST /report
+ * Varsayılan kapalı. Aktif frontend çağırmaz.
+ * İstemci resultJson'ına güvenerek rapor üretmek güvenlik riskidir.
+ */
 reportRouter.post(
   "/report",
   authMiddleware,
   subscriptionMiddleware,
   async (req, res) => {
+    if (!isLegacyReportEnabled()) {
+      res.status(410).json({
+        code: "LEGACY_REPORT_DISABLED",
+        error: "Legacy report disabled",
+        message: "Bu endpoint varsayılan olarak kapalıdır. ENABLE_LEGACY_REPORT=true ile açılabilir.",
+      });
+      return;
+    }
     const resultJson = req.body?.resultJson as ActuarialResult | undefined;
     if (!resultJson || typeof resultJson !== "object") {
       res.status(400).json({ error: "resultJson required" });
