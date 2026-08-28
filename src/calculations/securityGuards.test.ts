@@ -59,10 +59,32 @@ describe("JWT secret production safety", () => {
 });
 
 describe("CalculationAccessService", () => {
-  it("denies access by default (no payment system yet)", async () => {
+  it("grants development access while payment system is not wired", async () => {
     const { calculationAccessService } = await import("../services/calculationAccessService.js");
-    const result = await calculationAccessService.hasCalculationAccess("user-1");
-    expect(result.allowed).toBe(false);
-    expect(result.code).toBe("CALCULATION_ACCESS_REQUIRED");
+    const result = await calculationAccessService.assertCalculationAccess({
+      userId: "user-1",
+      draft: {
+        schemaVersion: 2,
+        calculationType: "TRAFFIC_INJURY",
+        common: { eventDate: "2022-01-01", calculationDate: "2026-08-28" },
+        parties: {
+          plaintiff: { firstName: "T", lastName: "K", birthDate: "1990-01-01", gender: "MALE" },
+          defendants: [],
+        },
+        liability: { injuredFaultRatio: 0, parties: [] },
+        disability: { permanentDisabilityRate: 10, disabilityStartDate: "2022-07-01" },
+        temporaryIncapacityPeriods: [],
+        accidentIncome: { incomeMode: "fixed", fixedAmount: 30000, averageSources: [] },
+        hospitalExpenses: [],
+        travelExpenses: [],
+        caregiverExpenses: [],
+        capitalValueDocuments: [],
+        zmtsPayments: [],
+        cascoPayments: [],
+      },
+      action: "RUN",
+    });
+    expect(result.allowed).toBe(true);
+    expect(result.code).toBe("ACCESS_GRANTED_DEVELOPMENT");
   });
 });

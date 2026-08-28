@@ -1,25 +1,51 @@
 import { describe, it, expect } from "vitest";
+import { CALCULATION_SCHEMA_VERSION } from "../calculations/types.js";
 import { calculationAccessService } from "../services/calculationAccessService.js";
 
-/**
- * /calculations/run erişim sınırı — motor bağlanmadan önce erişim yok = 402 yanıtı üretilir.
- * Route katmanı bu servise dayanır; mock sonuç dönmez.
- */
-describe("POST /calculations/run access gate", () => {
-  it("returns CALCULATION_ACCESS_REQUIRED for any user (payment not implemented)", async () => {
-    const access = await calculationAccessService.hasCalculationAccess("any-user");
-    expect(access.allowed).toBe(false);
-    expect(access.code).toBe("CALCULATION_ACCESS_REQUIRED");
+const minimalDraft = {
+  schemaVersion: CALCULATION_SCHEMA_VERSION,
+  calculationType: "TRAFFIC_INJURY" as const,
+  common: { eventDate: "2022-01-01", calculationDate: "2026-08-28" },
+  parties: {
+    plaintiff: { firstName: "T", lastName: "K", birthDate: "1990-01-01", gender: "MALE" as const },
+    defendants: [],
+  },
+  liability: { injuredFaultRatio: 0, parties: [] },
+  disability: { permanentDisabilityRate: 10, disabilityStartDate: "2022-07-01" },
+  temporaryIncapacityPeriods: [],
+  accidentIncome: { incomeMode: "fixed" as const, fixedAmount: 30000, averageSources: [] },
+  hospitalExpenses: [],
+  travelExpenses: [],
+  caregiverExpenses: [],
+  capitalValueDocuments: [],
+  zmtsPayments: [],
+  cascoPayments: [],
+};
 
-    // Route would respond with:
-    const httpStatus = access.allowed ? 200 : 402;
-    const body = {
-      code: access.code,
-      message: access.message,
-    };
-    expect(httpStatus).toBe(402);
-    expect(body).not.toHaveProperty("result");
-    expect(body).not.toHaveProperty("presentValue");
-    expect(body).not.toHaveProperty("total");
+describe("assertCalculationAccess", () => {
+  it("development ortamında ACCESS_GRANTED_DEVELOPMENT döner", async () => {
+    const decision = await calculationAccessService.assertCalculationAccess({
+      userId: "user-1",
+      draft: minimalDraft,
+      action: "RUN",
+    });
+    expect(decision.allowed).toBe(true);
+    expect(decision.code).toBe("ACCESS_GRANTED_DEVELOPMENT");
+    expect(decision.inputHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(decision.calculationHashVersion).toBe(1);
+  });
+
+  it("RUN ve REPORT aynı inputHash üretir", async () => {
+    const run = await calculationAccessService.assertCalculationAccess({
+      userId: "user-1",
+      draft: minimalDraft,
+      action: "RUN",
+    });
+    const report = await calculationAccessService.assertCalculationAccess({
+      userId: "user-1",
+      draft: minimalDraft,
+      action: "REPORT",
+    });
+    expect(run.inputHash).toBe(report.inputHash);
   });
 });

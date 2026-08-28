@@ -1,4 +1,5 @@
 import type { IncomePeriod, ValidationIssue } from "./types.js";
+import { actuarialDays360Inclusive } from "./trafficInjury/dayCount360.js";
 
 export type DateRangeLike = { startDate: string; endDate: string };
 
@@ -222,4 +223,42 @@ export function validateNonNegativeAmounts(
 
 export function sectionOk(errors: ValidationIssue[], prefixes: string[]): boolean {
   return !errors.some((e) => prefixes.some((p) => e.field === p || e.field.startsWith(`${p}.`) || e.field.startsWith(`${p}[`)));
+}
+
+export function isBlankString(v: unknown): boolean {
+  return typeof v !== "string" || v.trim() === "";
+}
+
+/** 30/360 aktüeryal dahil gün sayısı — form ve motor ile aynı (dayCount360.ts). */
+export function computeInclusiveDayCount(startDate: string, endDate: string): number | null {
+  if (!isValidIsoDateOnly(startDate) || !isValidIsoDateOnly(endDate)) return null;
+  if (parseIsoDate(startDate) > parseIsoDate(endDate)) return null;
+  const days = actuarialDays360Inclusive(startDate, endDate);
+  return days > 0 ? days : null;
+}
+
+export function validateOptionalIsoDate(
+  errors: ValidationIssue[],
+  value: unknown,
+  field: string,
+  label = "Tarih"
+): void {
+  if (isBlankString(value)) return;
+  if (!isValidIsoDateOnly(value)) {
+    pushError(errors, field, "INVALID_DATE", `${label} geçerli YYYY-MM-DD formatında olmalıdır.`);
+  }
+}
+
+export function validateNonNegativeNumberField(
+  errors: ValidationIssue[],
+  value: unknown,
+  field: string,
+  label: string
+): void {
+  if (value === undefined || value === null) return;
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    pushError(errors, field, "INVALID_NUMBER", `${label} sayı olmalıdır.`);
+  } else if (value < 0) {
+    pushError(errors, field, "NEGATIVE_AMOUNT", `${label} negatif olamaz.`);
+  }
 }

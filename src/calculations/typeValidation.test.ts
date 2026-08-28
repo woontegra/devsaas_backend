@@ -40,10 +40,13 @@ function trafficInjury(over: Partial<TrafficInjuryDraft> = {}): TrafficInjuryDra
     },
     disability: { permanentDisabilityRate: 40, disabilityStartDate: "2020-09-01" },
     temporaryIncapacityPeriods: [],
-    accidentIncome: { fixedAmount: 12000, useAverage: false, averageSources: [] },
+    accidentIncome: { incomeMode: "fixed", fixedAmount: 12000, averageSources: [] },
     hospitalExpenses: [],
     travelExpenses: [],
     caregiverExpenses: [],
+    capitalValueDocuments: [],
+    zmtsPayments: [],
+    cascoPayments: [],
     ...over,
   };
 }

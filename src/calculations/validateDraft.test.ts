@@ -14,14 +14,7 @@ function baseTrafficInjury() {
         birthDate: "1985-03-10",
         gender: "MALE" as const,
       },
-      defendants: [
-        {
-          id: "d1",
-          type: "INDIVIDUAL_DRIVER" as const,
-          firstName: "Mehmet",
-          lastName: "Kaya",
-        },
-      ],
+      defendants: [{ id: "d1", type: "INDIVIDUAL_DRIVER" as const, firstName: "Mehmet", lastName: "Kaya" }],
     },
     liability: {
       injuredFaultRatio: 20,
@@ -31,10 +24,13 @@ function baseTrafficInjury() {
     temporaryIncapacityPeriods: [
       { id: "t1", startDate: "2020-06-01", endDate: "2020-09-01", dayCount: 93 },
     ],
-    accidentIncome: { fixedAmount: 15000, useAverage: false, averageSources: [] },
+    accidentIncome: { incomeMode: "fixed" as const, fixedAmount: 15000, averageSources: [] },
     hospitalExpenses: [],
     travelExpenses: [],
     caregiverExpenses: [],
+    capitalValueDocuments: [],
+    zmtsPayments: [],
+    cascoPayments: [],
   };
 }
 
@@ -105,8 +101,8 @@ describe("validateCalculationDraft (phase 1.5 model)", () => {
   it("requires net amount when average income is gross", () => {
     const draft = baseTrafficInjury();
     draft.accidentIncome = {
+      incomeMode: "average",
       fixedAmount: null,
-      useAverage: true,
       averageSources: [
         {
           id: "a1",

@@ -181,9 +181,12 @@ export interface AverageIncomeSource {
   netAmount?: number;
 }
 
+export type IncomeMode = "minWage" | "fixed" | "average";
+
 export interface AccidentIncomeBlock {
+  incomeMode: IncomeMode;
   fixedAmount: number | null;
-  useAverage: boolean;
+  useAverage?: boolean;
   averageSources: AverageIncomeSource[];
   averageNetResult?: number;
 }
@@ -287,6 +290,42 @@ export interface CapitalValueDocument {
   notes?: string;
 }
 
+/** Garame satırının bağlandığı dosya içi kişi kaydı */
+export type InsuranceGarameSubjectRef = "plaintiff";
+
+/**
+ * Garame dağılımı — tek yaralı/hak sahibi satırı.
+ * Kullanıcı: subjectRef veya externalPersonLabel.
+ * Motor çıktıları: claimAmount … payableAfterPersonLimit.
+ */
+export interface InsuranceGarameEntry {
+  id: string;
+  subjectRef?: InsuranceGarameSubjectRef;
+  /** Dosya dışı kaza mağduru tanımı — yalnızca subjectRef yokken */
+  externalPersonLabel?: string;
+  claimAmount?: number;
+  garameBasisAmount?: number;
+  garameRatio?: number;
+  accidentLimitShare?: number;
+  payableAfterPersonLimit?: number;
+}
+
+export interface InsurancePaymentRecord {
+  id: string;
+  paymentDate: string;
+  paymentAmount: number;
+  /** Kişi başı limit (TL) */
+  liabilityLimit: number;
+  /** Kaza başı limit (TL) */
+  accidentLimit?: number;
+  /** parties.defendants[].id — ilgili sigorta davalısına referans */
+  defendantId?: string;
+  /** Garame dağılım satırları */
+  garameEntries?: InsuranceGarameEntry[];
+  /** Garame hesabı bu ödeme kaydı için uygulanacak mı (varsayılan: kapalı) */
+  garameEnabled?: boolean;
+}
+
 export interface CareExpensesBlock {
   temporaryCaregiver?: boolean;
   permanentCaregiver?: boolean;
@@ -316,6 +355,13 @@ export interface TrafficInjuryDraft extends DraftBase {
   travelExpenses: ExpenseItem[];
   caregiverExpenses: CaregiverExpenseRow[];
   passivePhaseAge?: number;
+  /** İşlemiş dönem başlangıcı (varsayılan: common.eventDate) */
+  processedPeriodStartDate?: string;
+  /** İşlemiş dönem bitişi (varsayılan: common.calculationDate) */
+  processedPeriodEndDate?: string;
+  capitalValueDocuments: CapitalValueDocument[];
+  zmtsPayments: InsurancePaymentRecord[];
+  cascoPayments: InsurancePaymentRecord[];
 }
 
 export interface TrafficDeathDraft extends DraftBase {
