@@ -139,12 +139,18 @@ export function validateIncomePeriods(
   }
 }
 
+export interface ValidateLiabilityOptions {
+  externalFaultRatio?: unknown;
+  faultSumAsError?: boolean;
+}
+
 export function validateLiability(
   errors: ValidationIssue[],
   warnings: ValidationIssue[],
   injuredFaultRatio: unknown,
   parties: { faultRatio: number }[] | undefined,
-  inevitabilityRatio?: unknown
+  inevitabilityRatio?: unknown,
+  options?: ValidateLiabilityOptions
 ): void {
   if (typeof injuredFaultRatio !== "number" || Number.isNaN(injuredFaultRatio)) {
     pushError(errors, "liability.injuredFaultRatio", "INVALID_NUMBER", "Kusur oranı sayı olmalıdır.");
@@ -172,13 +178,23 @@ export function validateLiability(
       sum += inevitabilityRatio;
     }
   }
+  const externalFaultRatio = options?.externalFaultRatio;
+  if (externalFaultRatio !== undefined && externalFaultRatio !== null && externalFaultRatio !== "") {
+    if (typeof externalFaultRatio !== "number" || Number.isNaN(externalFaultRatio)) {
+      pushError(errors, "liability.externalFaultRatio", "INVALID_NUMBER", "Dava dışı kusur oranı sayı olmalıdır.");
+    } else if (!isInRange(externalFaultRatio, 0, 100)) {
+      pushError(errors, "liability.externalFaultRatio", "OUT_OF_RANGE", "Dava dışı kusur oranı 0–100 arasında olmalıdır.");
+    } else {
+      sum += externalFaultRatio;
+    }
+  }
   if (Math.abs(sum - 100) > 0.01) {
-    pushWarning(
-      warnings,
-      "liability",
-      "FAULT_SUM_NOT_100",
-      `Kusur / sorumluluk oranları toplamı %${sum.toFixed(2)} (100 beklenir). Oranlar otomatik değiştirilmez.`
-    );
+    const message = `Kusur / sorumluluk oranları toplamı %${sum.toFixed(2)} (100 beklenir). Oranlar otomatik değiştirilmez.`;
+    if (options?.faultSumAsError) {
+      pushError(errors, "liability", "FAULT_SUM_NOT_100", message);
+    } else {
+      pushWarning(warnings, "liability", "FAULT_SUM_NOT_100", message);
+    }
   }
 }
 

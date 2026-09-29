@@ -1,5 +1,5 @@
 import type { Trh2010LifeEntry } from "../../data/trh2010.js";
-import type { IncomeMode } from "../types.js";
+import type { DeathZmtsGarameRow, IncomeMode } from "../types.js";
 
 export type TrafficInjuryPeriodKind =
   | "temporary_incapacity"
@@ -59,6 +59,13 @@ export interface InsuranceInterestDeductionRow {
   interestSegments: LegalInterestSegment[];
   interestAmount: number;
   principalPlusInterest: number;
+  /** TRAFFIC_DEATH ZMTS satırında ödeme kaydına bağ. Mahsup tutarını değiştirmez. */
+  paymentId?: string;
+  claimantId?: string;
+  claimantName?: string | null;
+  claimantRelation?: string | null;
+  /** Kişi satırları. Mahsup tutarına eklenmez. */
+  deathGarameRows?: DeathZmtsGarameRow[];
 }
 
 export interface InsuranceDeductionGroup {
@@ -119,6 +126,10 @@ export interface TrafficInjuryCalculationResult {
   insuranceDeductions: InsuranceDeductions;
   finalCompensationAfterInsurance: number;
   insuranceClaimContext: InsuranceClaimContext;
+  /** Dönemler arası boşluk kullanıcı onayıyla kesintisiz kabul edildi */
+  temporaryIncapacityGapIgnored?: boolean;
+  /** Kesintisiz geçici İG aralığı (ignoreGap=true iken) */
+  temporaryIncapacityEffectiveRange?: { startDate: string; endDate: string } | null;
   warnings: string[];
 }
 

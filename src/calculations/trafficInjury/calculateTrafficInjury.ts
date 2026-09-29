@@ -5,12 +5,14 @@ import { buildFuturePeriods } from "./buildFuturePeriods.js";
 import { buildProcessedWindow } from "./buildProcessedPeriods.js";
 import { calculateFuturePermanent } from "./calculateFuturePermanent.js";
 import { calculateProcessedPermanent } from "./calculateProcessedPermanent.js";
-import { calculateTemporaryIncapacity } from "./calculateTemporaryIncapacity.js";
+import { calculateTemporaryIncapacity, resolveTemporaryIncapacityGapIgnored } from "./calculateTemporaryIncapacity.js";
+import { computeEffectiveTemporaryRange } from "../tempIncapacityPeriodUtils.js";
 import { resolveIncome } from "./resolveIncome.js";
 import { resolveLifeExpectancy } from "./resolveLifeExpectancy.js";
 import { calculateInsuranceDeductions } from "./calculateInsuranceDeductions.js";
 import { roundMoney } from "./money.js";
 import type { TrafficInjuryCalculationResult } from "./types.js";
+import { assertDisabilityStartDateForCalculation } from "../disabilityStartDateValidation.js";
 
 function sumPsd(documents: TrafficInjuryDraft["capitalValueDocuments"]): number {
   return roundMoney(
@@ -19,6 +21,7 @@ function sumPsd(documents: TrafficInjuryDraft["capitalValueDocuments"]): number 
 }
 
 export function calculateTrafficInjury(draft: TrafficInjuryDraft): TrafficInjuryCalculationResult {
+  assertDisabilityStartDateForCalculation(draft);
   const warnings: string[] = [];
 
   const income = resolveIncome(draft, warnings);
@@ -27,6 +30,11 @@ export function calculateTrafficInjury(draft: TrafficInjuryDraft): TrafficInjury
 
   const temp = calculateTemporaryIncapacity(draft, processedWindow, income);
   const processed = calculateProcessedPermanent(draft, processedWindow, income);
+
+  const gapIgnored = resolveTemporaryIncapacityGapIgnored(draft);
+  const temporaryIncapacityEffectiveRange = gapIgnored
+    ? computeEffectiveTemporaryRange(draft.temporaryIncapacityPeriods)
+    : null;
 
   const futureSegments = buildFuturePeriods(
     draft.common.calculationDate,
@@ -97,6 +105,8 @@ export function calculateTrafficInjury(draft: TrafficInjuryDraft): TrafficInjury
       injuredFaultRate: fault.injuredFaultRate,
       garameInterestContext: insurance.garameInterestContext,
     },
+    temporaryIncapacityGapIgnored: gapIgnored,
+    temporaryIncapacityEffectiveRange,
     warnings,
   };
 }

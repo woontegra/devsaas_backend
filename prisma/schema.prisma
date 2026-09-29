@@ -8,27 +8,65 @@ datasource db {
 }
 
 model User {
-  id           String         @id @default(cuid())
-  email        String         @unique
-  passwordHash String
-  createdAt    DateTime       @default(now())
-  subscriptions Subscription[]
-  cases        Case[]
+  id                String             @id @default(cuid())
+  email             String             @unique
+  passwordHash      String
+  createdAt         DateTime           @default(now())
+  subscriptions       Subscription[]
+  cases               Case[]
+  savedCalculations   SavedCalculation[]
+  passwordResetTokens PasswordResetToken[]
+}
+
+/// Tek kullanımlık şifre sıfırlama. Ham token saklanmaz.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model Subscription {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan      String   // "starter" | "pro"
+  plan      String   // starter | single | pro | monthly | yearly | admin
   expiresAt DateTime
 }
 
+/// Legacy opaque save — yeni akış SavedCalculation kullanır
 model Case {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  inputJson Json
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  inputJson  Json
   resultJson Json
-  createdAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+}
+
+model SavedCalculation {
+  id                     String    @id @default(cuid())
+  userId                 String
+  user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  calculationType        String
+  title                  String?
+  displayName            String?
+  eventDate              String?
+  calculationDate        String?
+  inputHash              String
+  calculationHashVersion Int
+  inputSnapshotJson      Json
+  resultSnapshotJson     Json?
+  status                 String    @default("COMPLETED")
+  lastOpenedAt           DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, updatedAt(sort: Desc)])
 }

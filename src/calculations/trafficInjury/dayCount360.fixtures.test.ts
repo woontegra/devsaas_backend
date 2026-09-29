@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { actuarialDays360Inclusive } from "./dayCount360.js";
+import { deriveTemporaryPeriodDayCount } from "./temporaryPeriodDayCount.js";
 import { completedAgeYears } from "./dateUtils.js";
 import {
   ACTUARIAL_DAY_COUNT_FIXTURES,
@@ -29,7 +30,7 @@ describe("completedCalendarAgeYears fixtures", () => {
 });
 
 describe("form gün sayısı = motor dayCount", () => {
-  it("01.06.2020–31.08.2020 geçici İG satırında 90 gün", () => {
+  it("01.06.2020–31.08.2020 geçici İG satırı dahil takvim günüdür", () => {
     const draft: TrafficInjuryDraft = {
       schemaVersion: CALCULATION_SCHEMA_VERSION,
       calculationType: "TRAFFIC_INJURY",
@@ -52,8 +53,9 @@ describe("form gün sayısı = motor dayCount", () => {
       cascoPayments: [],
     };
 
-    const formDays = actuarialDays360Inclusive("2020-06-01", "2020-08-31");
-    expect(formDays).toBe(90);
+    const formDays = deriveTemporaryPeriodDayCount("2020-06-01", "2020-08-31");
+    expect(formDays).toBe(92);
+    expect(actuarialDays360Inclusive("2020-06-01", "2020-08-31")).toBe(90);
 
     const income = resolveIncome(draft, []);
     const window = buildProcessedWindow(draft);

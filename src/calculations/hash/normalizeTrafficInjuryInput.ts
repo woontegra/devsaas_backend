@@ -84,8 +84,10 @@ export function normalizeTrafficInjuryInput(draft: TrafficInjuryDraft): Record<s
       startDate: normalizeDate(p.startDate),
       endDate: normalizeDate(p.endDate),
     })),
+    temporaryIncapacityIgnoreGaps: draft.temporaryIncapacityIgnoreGaps === true,
     liability: {
       injuredFaultRatio: normalizeRate(draft.liability.injuredFaultRatio),
+      externalFaultRatio: normalizeRate(draft.liability.externalFaultRatio),
     },
     accidentIncome: {
       incomeMode: draft.accidentIncome.incomeMode,

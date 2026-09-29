@@ -1,5 +1,6 @@
 import type { DefendantParty, DefendantType, IncomeMode, TrafficInjuryDraft } from "../../calculations/types.js";
 import type { TrafficInjuryCalculationResult, TrafficInjuryPeriodRow, InsuranceDeductionGroup } from "../../calculations/trafficInjury/types.js";
+import { computeEffectiveTemporaryRange } from "../../calculations/tempIncapacityPeriodUtils.js";
 import { isGarameEnabled } from "../../calculations/trafficInjury/insuranceGarame.js";
 import {
   A4_SECTION,
@@ -65,6 +66,12 @@ function genderLabel(g: string): string {
 }
 
 function tempPeriodsSummary(draft: TrafficInjuryDraft): string {
+  if (draft.temporaryIncapacityIgnoreGaps === true) {
+    const effective = computeEffectiveTemporaryRange(draft.temporaryIncapacityPeriods);
+    if (effective) {
+      return `${formatDateIso(effective.startDate)} – ${formatDateIso(effective.endDate)} (dönemler arası boşluk kesintisiz kabul edilmiştir)`;
+    }
+  }
   const filled = draft.temporaryIncapacityPeriods.filter((p) => p.startDate && p.endDate);
   if (filled.length === 0) return "Geçici iş göremezlik dönemi girilmemiştir.";
   return filled
@@ -415,6 +422,7 @@ export function buildTrafficInjuryWordDocument(
     kvTable([
       ["Davacı kusur oranı", formatPercent(result.injuredFaultRate)],
       ["Davalı kusur oranları", liabilityLines],
+      ["Dava dışı kusur oranı", formatPercent(draft.liability.externalFaultRatio ?? 0)],
       ["Maluliyet oranı", formatPercent(result.permanentDisabilityRate)],
       ["Maluliyet başlangıç tarihi", formatDateIso(draft.disability.disabilityStartDate)],
       ["Geçici iş göremezlik dönemleri", tempPeriodsSummary(draft)],
@@ -439,6 +447,14 @@ export function buildTrafficInjuryWordDocument(
     ]),
 
     heading("7. Geçici İş Göremezlik Cetveli"),
+    ...(result.temporaryIncapacityGapIgnored && result.temporaryIncapacityEffectiveRange
+      ? [
+          bodyParagraph(
+            `Geçici iş göremezlik dönemleri ${formatDateIso(result.temporaryIncapacityEffectiveRange.startDate)} – ${formatDateIso(result.temporaryIncapacityEffectiveRange.endDate)} aralığında kesintisiz kabul edilmiştir. Dönemler arasındaki boşluk kullanıcı beyanı doğrultusunda %100 geçici iş göremezlik kapsamına dahil edilmiştir.`,
+            { spacingAfter: 120 }
+          ),
+        ]
+      : []),
     tempTable(result),
 
     heading("8. İşlemiş Dönem Cetveli"),

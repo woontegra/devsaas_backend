@@ -1,7 +1,10 @@
 import { Router } from "express";
 import bcrypt from "bcrypt";
 import { prisma } from "../prisma/index.js";
-import { createToken } from "../middleware/authMiddleware.js";
+import { createToken, authMiddleware } from "../middleware/authMiddleware.js";
+import type { AuthRequest } from "../middleware/authMiddleware.js";
+import { getUserAccessProfile } from "../services/subscriptionAccessService.js";
+import { confirmPasswordReset, requestPasswordReset } from "../services/passwordResetService.js";
 
 export const authRouter = Router();
 
@@ -59,5 +62,49 @@ authRouter.post("/login", async (req, res) => {
     res.json({ user: { id: user.id, email: user.email }, token });
   } catch {
     res.status(500).json({ error: "Login failed" });
+  }
+});
+
+authRouter.get("/me", authMiddleware, async (req, res) => {
+  const authReq = req as AuthRequest;
+  const userId = authReq.user?.userId;
+  if (!userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  try {
+    const profile = await getUserAccessProfile(userId, authReq.user?.email ?? null);
+    res.json({
+      user: { id: userId, email: profile.email },
+      capabilities: {
+        canSaveCalculation: profile.canSaveCalculation,
+        plan: profile.plan,
+        subscriptionActive: profile.subscriptionActive,
+        subscriptionExpiresAt: profile.subscriptionExpiresAt,
+      },
+    });
+  } catch {
+    res.status(500).json({ error: "Failed to load profile" });
+  }
+});
+
+authRouter.post("/forgot-password", async (req, res) => {
+  try {
+    const email = (req.body as { email?: unknown } | undefined)?.email;
+    const result = await requestPasswordReset(email);
+    res.status(result.status).json(result.body);
+  } catch {
+    res.status(500).json({ error: "Password reset request failed" });
+  }
+});
+
+authRouter.post("/reset-password", async (req, res) => {
+  try {
+    const body = req.body as { token?: unknown; newPassword?: unknown } | undefined;
+    const result = await confirmPasswordReset(body?.token, body?.newPassword);
+    res.status(result.status).json(result.body);
+  } catch {
+    res.status(500).json({ error: "Password reset failed" });
   }
 });

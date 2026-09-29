@@ -151,6 +151,22 @@ describe("validateTrafficInjuryDraft — extended", () => {
     expect(res.errors.some((e) => e.field.includes("capitalValueDocuments[0].amount"))).toBe(true);
   });
 
+  it("accepts a missing sosyal yardım list", () => {
+    const res = validateCalculationDraft(baseDraft());
+    expect(res.errors.filter((e) => e.field.startsWith("sosyalYardimOdenekleri"))).toHaveLength(0);
+  });
+
+  it("rejects negative sosyal yardım amount without flagging PSD rows", () => {
+    const res = validateCalculationDraft(
+      baseDraft({
+        capitalValueDocuments: [{ id: "psd1", amount: 100, notes: "PSD" }],
+        sosyalYardimOdenekleri: [{ id: "s1", amount: -5, notes: "Yardım" }],
+      })
+    );
+    expect(res.errors.some((e) => e.field.includes("sosyalYardimOdenekleri[0].amount"))).toBe(true);
+    expect(res.errors.some((e) => e.field.startsWith("capitalValueDocuments"))).toBe(false);
+  });
+
   it("accepts empty ZMTS/Kasko payment rows", () => {
     const res = validateCalculationDraft(
       baseDraft({
@@ -367,6 +383,7 @@ describe("validateTrafficInjuryDraft — extended", () => {
   it("does not warn DAY_COUNT_MISMATCH when dayCount matches 30/360 actuarial rule", () => {
     const res = validateCalculationDraft(
       baseDraft({
+        disability: { permanentDisabilityRate: 35, disabilityStartDate: "2021-06-09" },
         temporaryIncapacityPeriods: [
           { id: "t1", startDate: "2020-06-01", endDate: "2021-06-08", dayCount: 360 },
         ],
@@ -375,7 +392,7 @@ describe("validateTrafficInjuryDraft — extended", () => {
     expect(res.warnings.filter((w) => w.code === "DAY_COUNT_MISMATCH")).toHaveLength(0);
   });
 
-  it("warns DAY_COUNT_MISMATCH when dayCount differs from 30/360 actuarial rule", () => {
+  it("warns DAY_COUNT_MISMATCH when dayCount differs from temporary period calendar rule", () => {
     const res = validateCalculationDraft(
       baseDraft({
         temporaryIncapacityPeriods: [
@@ -384,6 +401,6 @@ describe("validateTrafficInjuryDraft — extended", () => {
       })
     );
     expect(res.warnings.some((w) => w.code === "DAY_COUNT_MISMATCH")).toBe(true);
-    expect(res.warnings.some((w) => w.message.includes("(90)"))).toBe(true);
+    expect(res.warnings.some((w) => w.message.includes("(92)"))).toBe(true);
   });
 });

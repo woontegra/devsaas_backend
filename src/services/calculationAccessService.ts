@@ -9,14 +9,16 @@ import {
   CALCULATION_HASH_VERSION,
 } from "../calculations/hash/calculationInputHash.js";
 import { UnsupportedHashCalculationTypeError } from "../calculations/hash/calculationInputNormalizer.js";
+import { getUserAccessProfile } from "./subscriptionAccessService.js";
 
-export type CalculationAccessAction = "RUN" | "REPORT";
+export type CalculationAccessAction = "RUN" | "REPORT" | "SAVE";
 
 export type AccessCode =
   | "ACCESS_GRANTED_DEVELOPMENT"
   | "ACCESS_GRANTED_ADMIN"
   | "ACCESS_GRANTED_SUBSCRIPTION"
   | "ACCESS_GRANTED_PAID_INPUT"
+  | "SAVE_NOT_PERMITTED"
   | "PAYMENT_REQUIRED_SINGLE"
   | "SUBSCRIPTION_EXPIRED"
   | "PAYMENT_PENDING"
@@ -33,6 +35,7 @@ export interface AccessDecision {
 
 export interface AssertCalculationAccessParams {
   userId: string;
+  email?: string | null;
   draft: CalculationDraft;
   action: CalculationAccessAction;
 }
@@ -49,10 +52,6 @@ export function isPaymentBlockedAccess(code: AccessCode): boolean {
 }
 
 export class CalculationAccessService {
-  /**
-   * Hesap sonucu / rapor erişim kararı.
-   * Şimdilik geliştirme erişimi açık; ileride admin/subscription/paid-input kontrolü buraya eklenir.
-   */
   async assertCalculationAccess(params: AssertCalculationAccessParams): Promise<AccessDecision> {
     let inputHash: string | null = null;
     try {
@@ -63,10 +62,50 @@ export class CalculationAccessService {
       }
     }
 
+    const profile = await getUserAccessProfile(params.userId, params.email ?? null);
+
+    if (params.action === "SAVE") {
+      if (!profile.canSaveCalculation) {
+        return {
+          allowed: false,
+          code: "SAVE_NOT_PERMITTED",
+          message:
+            "Kalıcı hesap kaydı yalnızca aylık veya yıllık abonelik kullanıcıları içindir. Taslak kaydetmeye devam edebilirsiniz.",
+          inputHash,
+          calculationHashVersion: CALCULATION_HASH_VERSION,
+          action: params.action,
+        };
+      }
+
+      const saveCode: AccessCode = profile.isAdmin
+        ? "ACCESS_GRANTED_ADMIN"
+        : profile.isDevelopmentAccess
+          ? "ACCESS_GRANTED_DEVELOPMENT"
+          : "ACCESS_GRANTED_SUBSCRIPTION";
+
+      return {
+        allowed: true,
+        code: saveCode,
+        message: "Kalıcı hesap kaydı izni verildi.",
+        inputHash,
+        calculationHashVersion: CALCULATION_HASH_VERSION,
+        action: params.action,
+      };
+    }
+
+    /* RUN / REPORT — geliştirme ortamında açık; ileride ödeme/abonelik buraya eklenir */
+    const runCode: AccessCode = profile.isAdmin
+      ? "ACCESS_GRANTED_ADMIN"
+      : profile.isDevelopmentAccess
+        ? "ACCESS_GRANTED_DEVELOPMENT"
+        : profile.subscriptionActive
+          ? "ACCESS_GRANTED_SUBSCRIPTION"
+          : "ACCESS_GRANTED_DEVELOPMENT";
+
     return {
       allowed: true,
-      code: "ACCESS_GRANTED_DEVELOPMENT",
-      message: "Geliştirme ortamında hesaplama erişimi açık.",
+      code: runCode,
+      message: "Hesaplama erişimi verildi.",
       inputHash,
       calculationHashVersion: CALCULATION_HASH_VERSION,
       action: params.action,

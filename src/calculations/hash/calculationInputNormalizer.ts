@@ -1,5 +1,6 @@
 import type { CalculationDraft } from "../types.js";
 import { normalizeTrafficInjuryInput } from "./normalizeTrafficInjuryInput.js";
+import { normalizeTrafficDeathInput } from "./normalizeTrafficDeathInput.js";
 
 export class UnsupportedHashCalculationTypeError extends Error {
   constructor(calculationType: string) {
@@ -13,6 +14,8 @@ export function normalizeCalculationInput(draft: CalculationDraft): Record<strin
   switch (draft.calculationType) {
     case "TRAFFIC_INJURY":
       return normalizeTrafficInjuryInput(draft);
+    case "TRAFFIC_DEATH":
+      return normalizeTrafficDeathInput(draft);
     default:
       throw new UnsupportedHashCalculationTypeError(draft.calculationType);
   }

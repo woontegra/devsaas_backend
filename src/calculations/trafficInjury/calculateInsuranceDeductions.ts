@@ -32,7 +32,9 @@ function accrueLegalInterest(
   paymentDate: string,
   calculationDate: string,
   periods: LegalInterestRatePeriod[],
-  warnings: string[]
+  warnings: string[],
+  /** 36500 yaralanma mahsubu. TRAFFIC_DEATH hak sahibi mahsubu 36000 kullanır. */
+  yearBasis = 36500
 ): {
   dayCount: number;
   interest: number;
@@ -66,7 +68,7 @@ function accrueLegalInterest(
         ? calendarDaysBetween(cursor, addDaysIso(segmentEnd, 1))
         : calendarDaysBetween(cursor, segmentEnd);
     if (segDays > 0) {
-      const segInterest = roundMoney((principal * resolved.rate * segDays) / 36500);
+      const segInterest = roundMoney((principal * resolved.rate * segDays) / yearBasis);
       segments.push({
         startDate: cursor,
         endDate: segmentEnd,
@@ -87,6 +89,35 @@ function accrueLegalInterest(
       ? segments.reduce((sum, seg) => sum + seg.calendarDayCount, 0)
       : calendarDaysBetween(paymentDate, calculationDate);
   return { dayCount, interest: totalInterest, segments };
+}
+
+export interface ClaimantUpdatedPaymentDetail {
+  principal: number;
+  paymentDate: string;
+  calculationDate: string;
+  legalInterestAmount: number;
+  updatedAmount: number;
+  /** Dönem dökümü. Faiz tutarını değiştirmez; formül kartı bunu gösterir. */
+  interestSegments: LegalInterestSegment[];
+}
+
+/** TRAFFIC_DEATH: ana para × takvim günü × dönem oranı / 36000, dönemler ayrı toplanır. */
+export function accrueClaimantLegalPayment(
+  principal: number,
+  paymentDate: string,
+  calculationDate: string,
+  periods: LegalInterestRatePeriod[] = LEGAL_INTEREST_RATE_PERIODS,
+  warnings: string[] = []
+): ClaimantUpdatedPaymentDetail {
+  const accrual = accrueLegalInterest(principal, paymentDate, calculationDate, periods, warnings, 36000);
+  return {
+    principal: roundMoney(principal),
+    paymentDate,
+    calculationDate,
+    legalInterestAmount: accrual.interest,
+    updatedAmount: roundMoney(principal + accrual.interest),
+    interestSegments: accrual.segments,
+  };
 }
 
 function buildGroup(
@@ -113,6 +144,7 @@ function buildGroup(
     const accrual = accrueLegalInterest(principal, p.paymentDate, calculationDate, periods, warnings);
     const interest = accrual.interest;
     const principalPlusInterest = roundMoney(principal + interest);
+    const claimantId = p.claimantId?.trim() || "";
 
     rows.push({
       paymentDate: p.paymentDate,
@@ -122,6 +154,27 @@ function buildGroup(
       interestSegments: accrual.segments,
       interestAmount: interest,
       principalPlusInterest,
+      ...(claimantId
+        ? {
+            paymentId: p.id,
+            claimantId,
+            claimantName: p.claimantName?.trim() || null,
+            claimantRelation: p.claimantRelation?.trim() || null,
+          }
+        : {}),
+      ...(p.deathGarameRows
+        ? {
+            deathGarameRows: p.deathGarameRows.map((person) => ({
+              claimantId: person.claimantId,
+              claimantStatus: person.claimantStatus,
+              claimantRelation: person.claimantRelation,
+              paymentDate: person.paymentDate,
+              paymentAmount: person.paymentAmount,
+              liabilityLimit: person.liabilityLimit,
+              accidentLimit: person.accidentLimit,
+            })),
+          }
+        : {}),
     });
 
     if (isGarameEnabled(p)) {
@@ -140,15 +193,20 @@ function buildGroup(
   return { rows, principalTotal, interestTotal, deductionTotal };
 }
 
-export function calculateInsuranceDeductions(
-  draft: TrafficInjuryDraft,
-  finalCompensationBeforeInsurance: number,
-  warnings: string[],
-  periods: LegalInterestRatePeriod[] = LEGAL_INTEREST_RATE_PERIODS
-): InsuranceDeductionsResult {
-  const calculationDate = draft.common.calculationDate;
+export function calculateInsuranceDeductionsFromPayments(params: {
+  zmtsPayments: InsurancePaymentRecord[];
+  cascoPayments: InsurancePaymentRecord[];
+  calculationDate: string;
+  amountBeforeInsurance: number;
+  warnings: string[];
+  periods?: LegalInterestRatePeriod[];
+}): InsuranceDeductionsResult {
+  const periods = params.periods ?? LEGAL_INTEREST_RATE_PERIODS;
+  const { calculationDate, warnings } = params;
+  const zmtsPayments = params.zmtsPayments ?? [];
+  const cascoPayments = params.cascoPayments ?? [];
 
-  if (periods.length === 0 && (draft.zmtsPayments.some(isEligiblePayment) || draft.cascoPayments.some(isEligiblePayment))) {
+  if (periods.length === 0 && (zmtsPayments.some(isEligiblePayment) || cascoPayments.some(isEligiblePayment))) {
     warnings.push(
       "Yasal faiz oranı tablosu boş. ZMTS/Kasko mahsupları yalnızca ana para ile uygulanır; faiz hesaplanmadı."
     );
@@ -156,7 +214,7 @@ export function calculateInsuranceDeductions(
 
   const garameInterestContext: InsuranceDeductionsResult["garameInterestContext"] = [];
   const zmts = buildGroup(
-    draft.zmtsPayments ?? [],
+    zmtsPayments,
     calculationDate,
     "zmts",
     periods,
@@ -164,7 +222,7 @@ export function calculateInsuranceDeductions(
     garameInterestContext
   );
   const casco = buildGroup(
-    draft.cascoPayments ?? [],
+    cascoPayments,
     calculationDate,
     "casco",
     periods,
@@ -174,7 +232,7 @@ export function calculateInsuranceDeductions(
 
   const totalDeduction = roundMoney(zmts.deductionTotal + casco.deductionTotal);
   const finalCompensationAfterInsurance = roundMoney(
-    Math.max(0, finalCompensationBeforeInsurance - totalDeduction)
+    Math.max(0, params.amountBeforeInsurance - totalDeduction)
   );
 
   return {
@@ -183,4 +241,20 @@ export function calculateInsuranceDeductions(
     finalCompensationAfterInsurance,
     garameInterestContext,
   };
+}
+
+export function calculateInsuranceDeductions(
+  draft: TrafficInjuryDraft,
+  finalCompensationBeforeInsurance: number,
+  warnings: string[],
+  periods: LegalInterestRatePeriod[] = LEGAL_INTEREST_RATE_PERIODS
+): InsuranceDeductionsResult {
+  return calculateInsuranceDeductionsFromPayments({
+    zmtsPayments: draft.zmtsPayments ?? [],
+    cascoPayments: draft.cascoPayments ?? [],
+    calculationDate: draft.common.calculationDate,
+    amountBeforeInsurance: finalCompensationBeforeInsurance,
+    warnings,
+    periods,
+  });
 }

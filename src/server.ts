@@ -5,6 +5,7 @@ import { authRouter } from "./routes/auth.js";
 import { actuarialRouter } from "./routes/actuarial.js";
 import { reportRouter } from "./routes/report.js";
 import { calculationsRouter } from "./routes/calculations.js";
+import { savedCalculationsRouter } from "./routes/savedCalculations.js";
 import { resolveJwtSecret } from "./middleware/authMiddleware.js";
 
 const nodeEnv = process.env.NODE_ENV ?? "development";
@@ -19,7 +20,7 @@ try {
 
 const app = express();
 
-const allowedOrigins = (process.env.CORS_ORIGINS ?? "http://localhost:5173")
+const allowedOrigins = (process.env.CORS_ORIGINS ?? "http://localhost:5173,http://localhost:5174")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
@@ -39,18 +40,21 @@ app.use(
       callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
+    exposedHeaders: ["Content-Disposition"],
   })
 );
 
-app.use(
-  rateLimit({
-    windowMs: 60 * 1000,
-    max: 100,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: "Too many requests" },
-  })
-);
+if (nodeEnv === "production") {
+  app.use(
+    rateLimit({
+      windowMs: 60 * 1000,
+      max: 100,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { error: "Too many requests" },
+    })
+  );
+}
 
 const authRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -62,7 +66,12 @@ const authRateLimit = rateLimit({
 
 app.use(express.json({ limit: "1mb" }));
 
-app.use("/auth", authRateLimit, authRouter);
+app.use("/auth/login", authRateLimit);
+app.use("/auth/register", authRateLimit);
+app.use("/auth/forgot-password", authRateLimit);
+app.use("/auth/reset-password", authRateLimit);
+app.use("/auth", authRouter);
+app.use("/calculations/saved", savedCalculationsRouter);
 app.use("/calculations", calculationsRouter);
 app.use("/", actuarialRouter);
 app.use("/", reportRouter);

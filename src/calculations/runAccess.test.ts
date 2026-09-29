@@ -32,7 +32,7 @@ describe("assertCalculationAccess", () => {
     expect(decision.allowed).toBe(true);
     expect(decision.code).toBe("ACCESS_GRANTED_DEVELOPMENT");
     expect(decision.inputHash).toMatch(/^[a-f0-9]{64}$/);
-    expect(decision.calculationHashVersion).toBe(1);
+    expect(decision.calculationHashVersion).toBe(4);
   });
 
   it("RUN ve REPORT aynı inputHash üretir", async () => {

@@ -50,6 +50,45 @@ export function addLifeExpectancyToDate(eventDate: string, le: Trh2010LifeEntry)
   return formatIsoFromDate(base);
 }
 
+/**
+ * Bilirkişi/aktüeryal 30 gün = 1 ay, 12 ay = 1 yıl taşımalı tarih ekleme.
+ * Takvimsel 28/29/30/31 gün eklemesi kullanmaz.
+ * TRAFFIC_DEATH muhtemel ömür sonu için; TRAFFIC_INJURY takvimsel addLifeExpectancyToDate kullanmaya devam eder.
+ */
+export function addLifeExpectancyActuarial30Day(
+  anchorDate: string,
+  years: number,
+  months: number,
+  days: number
+): string | null {
+  const p = parseIsoDateParts(anchorDate);
+  if (!p) return null;
+  if (![years, months, days].every((n) => Number.isFinite(n) && n >= 0)) return null;
+
+  let day = p.d + Math.trunc(days);
+  let month = p.m + Math.trunc(months);
+  let year = p.y + Math.trunc(years);
+
+  while (day > 30) {
+    day -= 30;
+    month += 1;
+  }
+  while (month > 12) {
+    month -= 12;
+    year += 1;
+  }
+
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+/** Trh2010LifeEntry üzerinden actuarial 30/12 ekleme */
+export function addLifeExpectancyActuarial30DayFromEntry(
+  anchorDate: string,
+  le: Trh2010LifeEntry
+): string | null {
+  return addLifeExpectancyActuarial30Day(anchorDate, le.year, le.month, le.day);
+}
+
 function formatIsoFromDate(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -95,6 +134,44 @@ export function calendarAgeAtEvent(birthDate: string, eventDate: string): Calend
   }
   if (years < 0) return null;
   return { years, months, days };
+}
+
+function daysInCalendarMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function addCalendarMonths(y: number, m: number, d: number, add: number): { y: number; m: number; d: number } {
+  const index = y * 12 + (m - 1) + add;
+  const ny = Math.floor(index / 12);
+  const nm = (index % 12) + 1;
+  return { y: ny, m: nm, d: Math.min(d, daysInCalendarMonth(ny, nm)) };
+}
+
+function utcDaySerial(y: number, m: number, d: number): number {
+  return Math.floor(Date.UTC(y, m - 1, d) / 86_400_000);
+}
+
+/**
+ * Doğum → kaza arasındaki gerçek takvim farkı (yıl, ay, gün).
+ * Ayın olmayan günü ayın son gününe sabitlenir (29 Şubat → artık olmayan yılda 28 Şubat).
+ * 30/360 kullanılmaz.
+ */
+export function calendarSpanYmd(startDate: string, endDate: string): CalendarAgeYmd | null {
+  const start = parseIsoDateParts(startDate);
+  const end = parseIsoDateParts(endDate);
+  if (!start || !end) return null;
+  if (utcDaySerial(end.y, end.m, end.d) < utcDaySerial(start.y, start.m, start.d)) return null;
+
+  let totalMonths = (end.y - start.y) * 12 + (end.m - start.m);
+  let anchor = addCalendarMonths(start.y, start.m, start.d, totalMonths);
+  if (utcDaySerial(anchor.y, anchor.m, anchor.d) > utcDaySerial(end.y, end.m, end.d)) {
+    totalMonths -= 1;
+    anchor = addCalendarMonths(start.y, start.m, start.d, totalMonths);
+  }
+  if (totalMonths < 0) return null;
+  const days = utcDaySerial(end.y, end.m, end.d) - utcDaySerial(anchor.y, anchor.m, anchor.d);
+  if (days < 0) return null;
+  return { years: Math.floor(totalMonths / 12), months: totalMonths % 12, days };
 }
 
 export interface DateRange {

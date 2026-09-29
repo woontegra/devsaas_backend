@@ -80,6 +80,8 @@ export interface LiabilityBlock {
   /** Zarar gören / işçi kusuru */
   injuredFaultRatio: number;
   parties: LiableParty[];
+  /** Trafik: dava dışı kusur (hesap indirimine dahil edilmez) */
+  externalFaultRatio?: number;
   /** İş kazası: kaçınılmazlık oranı (0–100) */
   inevitabilityRatio?: number;
 }
@@ -121,6 +123,17 @@ export interface DefendantParty {
   firstName?: string;
   lastName?: string;
   organizationName?: string;
+}
+
+export type TrafficDeathResponsibleType =
+  | "INDIVIDUAL_DRIVER"
+  | "INDIVIDUAL_VEHICLE_OWNER"
+  | "CORPORATE_VEHICLE_OWNER";
+
+export interface TrafficDeathResponsibleParty {
+  id: string;
+  type: TrafficDeathResponsibleType;
+  faultRatio: number;
 }
 
 export interface TrafficInjuryParties {
@@ -225,16 +238,21 @@ export interface InsuranceInfo {
   coverageNotes?: string;
 }
 
+export type BeneficiaryClaimantStatus = "PLAINTIFF" | "OUT_OF_CASE";
+
 export interface Beneficiary {
   id: string;
   fullName: string;
   relation: RelationType;
   birthDate: string;
   gender: Gender;
+  claimantStatus?: BeneficiaryClaimantStatus;
   educationStatus?: string;
   workStatus?: string;
   dependencyStatus?: string;
   claimsSupport?: boolean;
+  remarried?: boolean;
+  remarriageDate?: string | null;
   notes?: string;
 }
 
@@ -298,6 +316,23 @@ export type InsuranceGarameSubjectRef = "plaintiff";
  * Kullanıcı: subjectRef veya externalPersonLabel.
  * Motor çıktıları: claimAmount … payableAfterPersonLimit.
  */
+/**
+ * TRAFFIC_DEATH ZMTS garame satırı. Hak sahibi claimantId ile bağlanır.
+ * Dağıtım formülü bu satırlardan türetilmez; mevcut mahsup tutarını değiştirmez.
+ */
+export interface DeathZmtsGarameRow {
+  claimantId: string;
+  claimantName?: string;
+  claimantStatus?: "PLAINTIFF" | "OUT_OF_CASE";
+  claimantRelation?: string;
+  paymentDate?: string;
+  paymentAmount?: number;
+  /** Kişi başı limit. Mevcut ZMTS alan adıyla aynıdır. */
+  liabilityLimit?: number;
+  /** Kaza başı limit. Mevcut ZMTS alan adıyla aynıdır. */
+  accidentLimit?: number;
+}
+
 export interface InsuranceGarameEntry {
   id: string;
   subjectRef?: InsuranceGarameSubjectRef;
@@ -324,6 +359,15 @@ export interface InsurancePaymentRecord {
   garameEntries?: InsuranceGarameEntry[];
   /** Garame hesabı bu ödeme kaydı için uygulanacak mı (varsayılan: kapalı) */
   garameEnabled?: boolean;
+  /**
+   * TRAFFIC_DEATH ZMTS: ödemenin yapıldığı davacı.
+   * Eski kayıtlarda yoktur; yoksa rastgele kişiye bağlanmaz.
+   */
+  claimantId?: string;
+  claimantName?: string;
+  claimantRelation?: string;
+  /** Garame açıkken kişi satırları. Kapalıyken normal ödeme alanları geçerlidir. */
+  deathGarameRows?: DeathZmtsGarameRow[];
 }
 
 export interface CareExpensesBlock {
@@ -350,6 +394,8 @@ export interface TrafficInjuryDraft extends DraftBase {
   liability: LiabilityBlock;
   disability: DisabilityBlock;
   temporaryIncapacityPeriods: TemporaryIncapacityPeriod[];
+  /** Dönemler arası boşlukları kesintisiz geçici İG olarak hesapla */
+  temporaryIncapacityIgnoreGaps?: boolean;
   accidentIncome: AccidentIncomeBlock;
   hospitalExpenses: ExpenseItem[];
   travelExpenses: ExpenseItem[];
@@ -360,20 +406,94 @@ export interface TrafficInjuryDraft extends DraftBase {
   /** İşlemiş dönem bitişi (varsayılan: common.calculationDate) */
   processedPeriodEndDate?: string;
   capitalValueDocuments: CapitalValueDocument[];
+  /**
+   * Sosyal yardım ödeneği belgeleri. Peşin sermaye kayıtlarından bağımsızdır.
+   * Hesap motoruna dahil değildir; eski kayıtlarda yoktur.
+   */
+  sosyalYardimOdenekleri?: CapitalValueDocument[];
   zmtsPayments: InsurancePaymentRecord[];
   cascoPayments: InsurancePaymentRecord[];
 }
 
+export type DeceasedEmploymentStatus = "WORKING" | "NOT_WORKING" | null;
+
+export type DeceasedMaritalStatus = "MARRIED" | "SINGLE" | "DIVORCED";
+
+export type DeceasedMilitaryStatus = "COMPLETED" | "NOT_COMPLETED";
+
+export type DeceasedChildEducationLevel =
+  | "preschool"
+  | "primary"
+  | "middle"
+  | "high"
+  | "university"
+  | "postgraduate"
+  | "graduate"
+  | "not_in_education"
+  | "other";
+
+export interface DeceasedChildRecord {
+  id: string;
+  gender: Gender;
+  educationLevel: DeceasedChildEducationLevel | null;
+  educationOther?: string;
+}
+
+export interface DeceasedFamilyInfo {
+  maritalStatus: DeceasedMaritalStatus | null;
+  militaryStatus: DeceasedMilitaryStatus | null;
+  militaryServiceStartDate?: string | null;
+  militaryServiceDurationMonths?: 6 | 12 | null;
+  educationStatus?: DeceasedChildEducationLevel | null;
+  educationOtherDescription?: string;
+  hasChildren: boolean | null;
+  childrenCount: number;
+  children: DeceasedChildRecord[];
+}
+
+/** Kullanıcı girdisi. Oran ve tutar motor tarafından türetilir. */
+export interface MarriageProbabilityDeductionState {
+  under18ChildCount: number;
+  note?: string;
+}
+
+/** Eğitim gideri indirimi henüz parasal hesaba girmez. Not kaydı tutulur. */
+export interface EducationExpenseDeductionState {
+  notes: string;
+}
+
 export interface TrafficDeathDraft extends DraftBase {
   calculationType: "TRAFFIC_DEATH";
+  employmentStatus: DeceasedEmploymentStatus;
   deceased: DeceasedPerson;
+  deceasedFamilyInfo?: DeceasedFamilyInfo;
+  accidentIncome: AccidentIncomeBlock;
+  nonWorkingSelectedIncome: number | null;
   incomePeriods: IncomePeriod[];
   beneficiaries: Beneficiary[];
   supportRelations: SupportRelation[];
   liability: LiabilityBlock;
+  deceasedFaultRate?: number;
+  responsibleParties?: TrafficDeathResponsibleParty[];
+  externalFaultRate?: number;
+  /** @deprecated */
+  claimantFaultRates?: Record<string, number>;
   deathExpenses: DeathExpenseBlock;
   priorPayments: PriorPayment[];
   insurance: InsuranceInfo;
+  /**
+   * Sosyal yardım ödeneği. Yaralanma ile aynı kayıt yapısıdır.
+   * Hesap motoruna dahil değildir; eski kayıtlarda yoktur.
+   */
+  sosyalYardimOdenekleri?: CapitalValueDocument[];
+  /** Peşin sermaye değeri. Eski kayıtlarda yoktur; yoksa önceki ödeme mahsubu korunur. */
+  capitalValueDocuments?: CapitalValueDocument[];
+  /** ZMTS ödemeleri. Eski kayıtlarda yoktur. */
+  zmtsPayments?: InsurancePaymentRecord[];
+  /** Kasko ödemeleri. Eski kayıtlarda yoktur. */
+  cascoPayments?: InsurancePaymentRecord[];
+  marriageProbabilityDeduction?: MarriageProbabilityDeductionState;
+  educationExpenseDeduction?: EducationExpenseDeductionState;
 }
 
 export interface WorkInjuryDraft extends DraftBase {

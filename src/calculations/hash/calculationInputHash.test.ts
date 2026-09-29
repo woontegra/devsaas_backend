@@ -24,7 +24,7 @@ function baseDraft(over: Partial<TrafficInjuryDraft> = {}): TrafficInjuryDraft {
       defendants: [{ id: "d1", type: "INDIVIDUAL_DRIVER", firstName: "Mehmet", lastName: "Kaya" }],
     },
     liability: { injuredFaultRatio: 0, parties: [] },
-    disability: { permanentDisabilityRate: 27, disabilityStartDate: "2022-07-01" },
+    disability: { permanentDisabilityRate: 27, disabilityStartDate: "2022-01-08" },
     temporaryIncapacityPeriods: [{ id: "t1", startDate: "2022-01-01", endDate: "2022-01-07" }],
     accidentIncome: { incomeMode: "fixed", fixedAmount: 30000, averageSources: [] },
     hospitalExpenses: [],
@@ -165,6 +165,70 @@ describe("hashCalculationInput — TRAFFIC_INJURY", () => {
   });
 
   it("canonical payload calculationHashVersion içerir", () => {
-    expect(CALCULATION_HASH_VERSION).toBe(1);
+    expect(CALCULATION_HASH_VERSION).toBe(4);
+  });
+});
+
+describe("hashCalculationInput — TRAFFIC_DEATH", () => {
+  function deathDraft(over: Partial<import("../types.js").TrafficDeathDraft> = {}) {
+    return {
+      schemaVersion: CALCULATION_SCHEMA_VERSION,
+      calculationType: "TRAFFIC_DEATH" as const,
+      common: { eventDate: "2020-06-01", calculationDate: "2024-01-15" },
+      deceased: {
+        birthDate: "1970-01-01",
+        deathDate: "2020-06-01",
+        gender: "male" as const,
+        fullName: "Ahmet",
+      },
+      employmentStatus: "WORKING" as const,
+      accidentIncome: { incomeMode: "fixed" as const, fixedAmount: 10000, averageSources: [] },
+      nonWorkingSelectedIncome: null,
+      incomePeriods: [],
+      beneficiaries: [],
+      supportRelations: [],
+      liability: { injuredFaultRatio: 0, parties: [] },
+      deathExpenses: { otherExpenses: [] },
+      priorPayments: [],
+      insurance: {},
+      ...over,
+    };
+  }
+
+  it("employmentStatus değişince hash değişir", () => {
+    const a = deathDraft();
+    const b = deathDraft({
+      employmentStatus: "NOT_WORKING",
+      nonWorkingSelectedIncome: 8500,
+    });
+    expect(hashCalculationInput(a)).not.toBe(hashCalculationInput(b));
+  });
+
+  it("claimantStatus değişince hash değişir", () => {
+    const a = deathDraft({
+      beneficiaries: [
+        {
+          id: "b1",
+          fullName: "Ayşe",
+          relation: "spouse",
+          birthDate: "1975-01-01",
+          gender: "female",
+          claimantStatus: "PLAINTIFF",
+        },
+      ],
+    });
+    const b = deathDraft({
+      beneficiaries: [
+        {
+          id: "b1",
+          fullName: "Ayşe",
+          relation: "spouse",
+          birthDate: "1975-01-01",
+          gender: "female",
+          claimantStatus: "OUT_OF_CASE",
+        },
+      ],
+    });
+    expect(hashCalculationInput(a)).not.toBe(hashCalculationInput(b));
   });
 });

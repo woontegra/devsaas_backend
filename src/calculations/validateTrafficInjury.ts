@@ -1,11 +1,9 @@
 import type {
-  AccidentIncomeBlock,
   CalculationValidateResponse,
   CapitalValueDocument,
   CaregiverExpenseRow,
   DefendantParty,
   DefendantType,
-  IncomeMode,
   InsuranceGarameEntry,
   InsurancePaymentRecord,
   TemporaryIncapacityPeriod,
@@ -14,9 +12,8 @@ import type {
 } from "./types.js";
 import { CALCULATION_SCHEMA_VERSION } from "./types.js";
 import { isGarameEnabled } from "./trafficInjury/insuranceGarame.js";
-import { getNetMinWageForDate } from "../data/netMinWage.js";
+import { deriveTemporaryPeriodDayCount } from "./trafficInjury/temporaryPeriodDayCount.js";
 import {
-  computeInclusiveDayCount,
   isBlankString,
   isInRange,
   isObject,
@@ -32,6 +29,11 @@ import {
   validateNonNegativeNumberField,
   validateOptionalIsoDate,
 } from "./validationHelpers.js";
+import { validateTempDisabilityContinuity } from "./tempDisabilityContinuity.js";
+import { validateTempIncapacityStartMatchesEventDate } from "./tempIncapacityStartValidation.js";
+import { validateTempIncapacityPeriodContinuity } from "./tempIncapacityPeriodContinuity.js";
+import { validateDisabilityStartDateRequired } from "./disabilityStartDateValidation.js";
+import { resolveIncomeMode, validateAccidentIncome } from "./validateAccidentIncome.js";
 
 const SECTIONS = ["parties", "calculationInfo", "lifeExpectancy", "review"] as const;
 const DEFAULT_PASSIVE_PHASE_AGE = 60;
@@ -46,16 +48,6 @@ const VALID_DEFENDANT_TYPES = new Set<DefendantType>([
 
 const ZMTS_DEFENDANT_TYPE: DefendantType = "COMPULSORY_TRAFFIC_INSURER";
 const CASCO_DEFENDANT_TYPE: DefendantType = "CASCO_INSURER";
-
-function resolveIncomeMode(block: AccidentIncomeBlock | undefined): IncomeMode {
-  if (!block) return "minWage";
-  if (block.incomeMode === "minWage" || block.incomeMode === "fixed" || block.incomeMode === "average") {
-    return block.incomeMode;
-  }
-  if (block.useAverage) return "average";
-  if (typeof block.fixedAmount === "number" && block.fixedAmount > 0) return "fixed";
-  return "minWage";
-}
 
 function validateDefendants(errors: ValidationIssue[], defendants: DefendantParty[]): void {
   if (!Array.isArray(defendants) || defendants.length === 0) {
@@ -149,8 +141,8 @@ function validateTempPeriods(errors: ValidationIssue[], warnings: ValidationIssu
     }
 
     if (isValidIsoDateOnly(row.startDate) && isValidIsoDateOnly(row.endDate)) {
-      const expectedDays = computeInclusiveDayCount(row.startDate, row.endDate);
-      if (expectedDays != null && row.dayCount != null && row.dayCount !== expectedDays) {
+      const expectedDays = deriveTemporaryPeriodDayCount(row.startDate, row.endDate);
+      if (expectedDays > 0 && row.dayCount != null && row.dayCount !== expectedDays) {
         pushWarning(
           warnings,
           `${prefix}.dayCount`,
@@ -174,91 +166,6 @@ function validateTempPeriods(errors: ValidationIssue[], warnings: ValidationIssu
   }
 }
 
-function validateAccidentIncome(
-  errors: ValidationIssue[],
-  warnings: ValidationIssue[],
-  income: AccidentIncomeBlock | undefined,
-  eventDate: string | undefined
-): void {
-  const block = income ?? {
-    incomeMode: "minWage" as const,
-    fixedAmount: null,
-    averageSources: [],
-  };
-  const mode = resolveIncomeMode(block);
-
-  if (typeof block.fixedAmount === "number" && block.fixedAmount < 0) {
-    pushError(errors, "accidentIncome.fixedAmount", "NEGATIVE_AMOUNT", "Sabit gelir negatif olamaz.");
-  }
-
-  const sources = Array.isArray(block.averageSources) ? block.averageSources : [];
-  sources.forEach((s, i) => {
-    const prefix = `accidentIncome.averageSources[${i}]`;
-    if (typeof s.amount !== "number" || Number.isNaN(s.amount)) {
-      pushError(errors, `${prefix}.amount`, "INVALID_NUMBER", "Gelir tutarı sayı olmalıdır.");
-    } else if (s.amount < 0) {
-      pushError(errors, `${prefix}.amount`, "NEGATIVE_AMOUNT", "Gelir tutarı negatif olamaz.");
-    }
-    if (s.amountKind === "gross" && s.amount > 0) {
-      if (typeof s.netAmount !== "number" || Number.isNaN(s.netAmount)) {
-        pushError(
-          errors,
-          `${prefix}.netAmount`,
-          "REQUIRED",
-          "Brüt tutar için net karşılık hesaplanmalıdır."
-        );
-      } else if (s.netAmount < 0) {
-        pushError(errors, `${prefix}.netAmount`, "NEGATIVE_AMOUNT", "Net karşılık negatif olamaz.");
-      }
-    }
-  });
-
-  if (mode === "minWage") {
-    if (!isValidIsoDateOnly(eventDate)) {
-      pushWarning(
-        warnings,
-        "accidentIncome",
-        "INCOME_EVENT_DATE_MISSING",
-        "Asgari ücret modu için geçerli kaza tarihi gereklidir."
-      );
-    } else if (getNetMinWageForDate(eventDate) == null) {
-      pushWarning(
-        warnings,
-        "accidentIncome",
-        "MIN_WAGE_PERIOD_MISSING",
-        `${eventDate} tarihi için tanımlı net asgari ücret dönemi bulunamadı.`
-      );
-    }
-    return;
-  }
-
-  if (mode === "fixed") {
-    if (typeof block.fixedAmount !== "number" || Number.isNaN(block.fixedAmount) || block.fixedAmount <= 0) {
-      pushWarning(warnings, "accidentIncome.fixedAmount", "INCOME_MISSING", "Sabit gelir tutarı girilmelidir.");
-    }
-    return;
-  }
-
-  if (mode === "average") {
-    if (typeof block.averageNetResult !== "number" || Number.isNaN(block.averageNetResult) || block.averageNetResult <= 0) {
-      pushWarning(
-        warnings,
-        "accidentIncome.averageNetResult",
-        "INCOME_MISSING",
-        "Ortalama gelir modunda hesaplanmış ortalama net gelir girilmelidir."
-      );
-    }
-    if (sources.length === 0) {
-      pushWarning(
-        warnings,
-        "accidentIncome.averageSources",
-        "AVERAGE_INCOME_EMPTY",
-        "Ortalama gelir seçildi ancak kaynak eklenmedi."
-      );
-    }
-  }
-}
-
 function isPsdEmpty(doc: CapitalValueDocument): boolean {
   return (
     isBlankString(doc.notes) &&
@@ -270,10 +177,14 @@ function isPsdEmpty(doc: CapitalValueDocument): boolean {
   );
 }
 
-function validateCapitalValueDocuments(errors: ValidationIssue[], docs: CapitalValueDocument[]): void {
-  docs.forEach((doc, i) => {
+export function validateCapitalValueDocuments(
+  errors: ValidationIssue[],
+  docs: CapitalValueDocument[] | undefined,
+  fieldName = "capitalValueDocuments"
+): void {
+  (docs ?? []).forEach((doc, i) => {
     if (isPsdEmpty(doc)) return;
-    const prefix = `capitalValueDocuments[${i}]`;
+    const prefix = `${fieldName}[${i}]`;
     validateOptionalIsoDate(errors, doc.documentDate, `${prefix}.documentDate`, "Belge tarihi");
     validateNonNegativeNumberField(errors, doc.amount, `${prefix}.amount`, "Belge tutarı");
   });
@@ -333,7 +244,7 @@ function isInsurancePaymentEmpty(row: InsurancePaymentRecord): boolean {
   );
 }
 
-function validateInsurancePayments(
+export function validateInsurancePayments(
   errors: ValidationIssue[],
   warnings: ValidationIssue[],
   rows: InsurancePaymentRecord[],
@@ -494,7 +405,17 @@ export function validateTrafficInjuryDraft(input: unknown): CalculationValidateR
   validatePlaintiff(errors, plaintiff, common.eventDate);
   validateDefendants(errors, defendants);
 
-  validateLiability(errors, warnings, draft.liability?.injuredFaultRatio, draft.liability?.parties);
+  validateLiability(
+    errors,
+    warnings,
+    draft.liability?.injuredFaultRatio,
+    draft.liability?.parties,
+    undefined,
+    {
+      externalFaultRatio: draft.liability?.externalFaultRatio ?? 0,
+      faultSumAsError: true,
+    }
+  );
 
   const rate = draft.disability?.permanentDisabilityRate;
   if (typeof rate !== "number" || Number.isNaN(rate)) {
@@ -502,6 +423,12 @@ export function validateTrafficInjuryDraft(input: unknown): CalculationValidateR
   } else if (!isInRange(rate, 0, 100)) {
     pushError(errors, "disability.permanentDisabilityRate", "OUT_OF_RANGE", "Maluliyet oranı 0–100 arasında olmalıdır.");
   }
+
+  validateDisabilityStartDateRequired(
+    errors,
+    typeof rate === "number" && !Number.isNaN(rate) ? rate : undefined,
+    draft.disability?.disabilityStartDate
+  );
 
   if (
     draft.disability?.disabilityStartDate &&
@@ -516,6 +443,21 @@ export function validateTrafficInjuryDraft(input: unknown): CalculationValidateR
   }
 
   validateTempPeriods(errors, warnings, draft.temporaryIncapacityPeriods ?? []);
+  validateTempIncapacityStartMatchesEventDate(
+    errors,
+    draft.temporaryIncapacityPeriods ?? [],
+    common.eventDate
+  );
+  validateTempIncapacityPeriodContinuity(
+    errors,
+    draft.temporaryIncapacityPeriods ?? [],
+    draft.temporaryIncapacityIgnoreGaps === true
+  );
+  validateTempDisabilityContinuity(
+    errors,
+    draft.temporaryIncapacityPeriods ?? [],
+    draft.disability?.disabilityStartDate
+  );
   validateAccidentIncome(errors, warnings, draft.accidentIncome, common.eventDate);
   validateNonNegativeAmounts(errors, draft.hospitalExpenses ?? [], "hospitalExpenses");
   validateNonNegativeAmounts(errors, draft.travelExpenses ?? [], "travelExpenses");
@@ -523,6 +465,7 @@ export function validateTrafficInjuryDraft(input: unknown): CalculationValidateR
   validatePassivePhaseAge(errors, draft.passivePhaseAge);
   validateProcessedPeriodDates(errors, draft);
   validateCapitalValueDocuments(errors, draft.capitalValueDocuments ?? []);
+  validateCapitalValueDocuments(errors, draft.sosyalYardimOdenekleri, "sosyalYardimOdenekleri");
   validateInsurancePayments(errors, warnings, draft.zmtsPayments ?? [], "zmtsPayments", ZMTS_DEFENDANT_TYPE, defendants);
   validateInsurancePayments(errors, warnings, draft.cascoPayments ?? [], "cascoPayments", CASCO_DEFENDANT_TYPE, defendants);
 
@@ -540,7 +483,9 @@ export function validateTrafficInjuryDraft(input: unknown): CalculationValidateR
   const calcComplete = Boolean(
     common.eventDate &&
       common.calculationDate &&
-      typeof draft.disability?.permanentDisabilityRate === "number"
+      typeof draft.disability?.permanentDisabilityRate === "number" &&
+      (draft.disability.permanentDisabilityRate <= 0 ||
+        Boolean(draft.disability.disabilityStartDate?.trim()))
   );
 
   const lifeExpComplete = plaintiffComplete && Boolean(common.eventDate);
@@ -563,7 +508,7 @@ export function validateTrafficInjuryDraft(input: unknown): CalculationValidateR
     ],
     [
       "lifeExpectancy",
-      ["passivePhaseAge", "capitalValueDocuments", "zmtsPayments", "cascoPayments"],
+      ["passivePhaseAge", "capitalValueDocuments", "sosyalYardimOdenekleri", "zmtsPayments", "cascoPayments"],
       () => lifeExpComplete,
     ],
   ];

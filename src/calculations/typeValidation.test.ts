@@ -62,9 +62,10 @@ function trafficDeath(over: Partial<TrafficDeathDraft> = {}): TrafficDeathDraft 
       gender: "male",
       fullName: "Ahmet",
     },
-    incomePeriods: [
-      { id: "1", startDate: "2019-01-01", amount: 10000, amountKind: "net", sourceType: "payroll" },
-    ],
+    employmentStatus: "WORKING",
+    accidentIncome: { incomeMode: "fixed", fixedAmount: 10000, averageSources: [] },
+    nonWorkingSelectedIncome: null,
+    incomePeriods: [],
     beneficiaries: [
       {
         id: "b1",
@@ -72,13 +73,18 @@ function trafficDeath(over: Partial<TrafficDeathDraft> = {}): TrafficDeathDraft 
         relation: "spouse",
         birthDate: "1975-01-01",
         gender: "female",
+        claimantStatus: "PLAINTIFF",
       },
     ],
     supportRelations: [],
     liability: {
       injuredFaultRatio: 0,
-      parties: [{ id: "p1", partyType: "defendant", name: "X", faultRatio: 100 }],
+      parties: [],
     },
+    claimantFaultRates: { b1: 100 },
+    deceasedFaultRate: 100,
+    responsibleParties: [],
+    externalFaultRate: 0,
     deathExpenses: { otherExpenses: [] },
     priorPayments: [],
     insurance: {},
@@ -159,16 +165,64 @@ describe("type-specific validation", () => {
     expect(res.missingSections).not.toContain("beneficiaries");
   });
 
-  it("traffic death requires beneficiaries", () => {
+  it("traffic death requires at least one plaintiff beneficiary", () => {
     const res = validateCalculationDraft(trafficDeath({ beneficiaries: [] }));
     expect(res.valid).toBe(false);
     expect(res.errors.some((e) => e.field === "beneficiaries")).toBe(true);
+
+    const onlyOutOfCase = validateCalculationDraft(
+      trafficDeath({
+        beneficiaries: [
+          {
+            id: "b1",
+            fullName: "Ali",
+            relation: "child",
+            birthDate: "2000-01-01",
+            gender: "male",
+            claimantStatus: "OUT_OF_CASE",
+          },
+        ],
+      })
+    );
+    expect(onlyOutOfCase.valid).toBe(false);
+    expect(onlyOutOfCase.errors.some((e) => e.message.includes("davacı"))).toBe(true);
   });
 
   it("traffic death does not require disability", () => {
     const res = validateCalculationDraft(trafficDeath());
     expect(res.errors.some((e) => e.field.includes("disability"))).toBe(false);
     expect(res.missingSections).not.toContain("disability");
+  });
+
+  it("traffic death merges common dates and income into deceased section", () => {
+    const res = validateCalculationDraft(trafficDeath());
+    expect(res.completedSections).toContain("deceased");
+    expect(res.completedSections).not.toContain("caseEvent");
+    expect(res.completedSections).not.toContain("income");
+
+    const incomplete = validateCalculationDraft(
+      trafficDeath({ common: { eventDate: "", calculationDate: "2024-01-15" } })
+    );
+    expect(incomplete.missingSections).toContain("deceased");
+    expect(incomplete.missingSections).not.toContain("caseEvent");
+    expect(incomplete.missingSections).not.toContain("income");
+
+    const noEmployment = validateCalculationDraft(
+      trafficDeath({ employmentStatus: null, accidentIncome: { incomeMode: "minWage", fixedAmount: null, averageSources: [] } })
+    );
+    expect(noEmployment.missingSections).toContain("deceased");
+    expect(noEmployment.errors.some((e) => e.field === "employmentStatus")).toBe(true);
+
+    const notWorkingMissingIncome = validateCalculationDraft(
+      trafficDeath({ employmentStatus: "NOT_WORKING", nonWorkingSelectedIncome: null })
+    );
+    expect(notWorkingMissingIncome.valid).toBe(false);
+    expect(notWorkingMissingIncome.errors.some((e) => e.field === "nonWorkingSelectedIncome")).toBe(true);
+
+    const notWorkingOk = validateCalculationDraft(
+      trafficDeath({ employmentStatus: "NOT_WORKING", nonWorkingSelectedIncome: 8500 })
+    );
+    expect(notWorkingOk.completedSections).toContain("deceased");
   });
 
   it("work injury checks employer and does not require beneficiaries", () => {

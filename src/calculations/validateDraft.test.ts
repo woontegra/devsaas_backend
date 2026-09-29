@@ -20,7 +20,7 @@ function baseTrafficInjury() {
       injuredFaultRatio: 20,
       parties: [{ id: "d1", partyType: "defendant" as const, name: "Gerçek Kişi Şoför", faultRatio: 80 }],
     },
-    disability: { permanentDisabilityRate: 35, disabilityStartDate: "2020-09-01" },
+    disability: { permanentDisabilityRate: 35, disabilityStartDate: "2020-09-02" },
     temporaryIncapacityPeriods: [
       { id: "t1", startDate: "2020-06-01", endDate: "2020-09-01", dayCount: 93 },
     ],
@@ -117,12 +117,13 @@ describe("validateCalculationDraft (phase 1.5 model)", () => {
     expect(res.errors.some((e) => e.field.includes("netAmount"))).toBe(true);
   });
 
-  it("warns when fault ratios do not sum to 100", () => {
+  it("errors when fault ratios do not sum to 100", () => {
     const draft = baseTrafficInjury();
     draft.liability.injuredFaultRatio = 10;
     draft.liability.parties[0]!.faultRatio = 50;
     const res = validateCalculationDraft(draft);
-    expect(res.warnings.some((w) => w.code === "FAULT_SUM_NOT_100")).toBe(true);
+    expect(res.valid).toBe(false);
+    expect(res.errors.some((e) => e.code === "FAULT_SUM_NOT_100")).toBe(true);
   });
 
   it("response never contains monetary result keys", () => {

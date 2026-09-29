@@ -12,6 +12,7 @@ import { calculateProcessedPermanent } from "./calculateProcessedPermanent.js";
 import { resolveIncome } from "./resolveIncome.js";
 import { buildProcessedWindow } from "./buildProcessedPeriods.js";
 import { calculateTrafficInjury } from "./calculateTrafficInjury.js";
+import { hashCalculationInput } from "../hash/calculationInputHash.js";
 
 function baseDraft(over: Partial<TrafficInjuryDraft> = {}): TrafficInjuryDraft {
   return {
@@ -210,6 +211,34 @@ describe("kusur ve PSD — golden", () => {
     expect(result.totalAfterFault).toBe(0);
     expect(result.psdDeductibleAfterFault).toBe(16000);
     expect(result.totalAfterPSD).toBe(0);
+  });
+
+  it("sosyal yardım ödeneği sonucu ve girdi hash'ini değiştirmez", () => {
+    const draft = baseDraft({
+      liability: { injuredFaultRatio: 20, parties: [] },
+      capitalValueDocuments: [{ id: "psd1", amount: 20000 }],
+      common: { eventDate: "2025-01-01", calculationDate: "2025-01-01" },
+      disability: { permanentDisabilityRate: 0, disabilityStartDate: "2025-01-01" },
+      parties: {
+        plaintiff: {
+          firstName: "T",
+          lastName: "K",
+          birthDate: "1990-01-01",
+          gender: "MALE",
+        },
+        defendants: [],
+      },
+    });
+    const withAid = {
+      ...draft,
+      sosyalYardimOdenekleri: [
+        { id: "s1", amount: 50000, notes: "Yardım", documentDate: "2024-01-01", documentNumber: "A1" },
+      ],
+    };
+    expect(calculateTrafficInjury(withAid)).toEqual(calculateTrafficInjury(draft));
+    expect(hashCalculationInput(withAid)).toBe(hashCalculationInput(draft));
+    expect(withAid.capitalValueDocuments).toEqual(draft.capitalValueDocuments);
+    expect(withAid.sosyalYardimOdenekleri).not.toEqual(draft.capitalValueDocuments);
   });
 });
 
